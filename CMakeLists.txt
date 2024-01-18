@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Moonlight VERSION 1.0)
 
-add_compile_options(-w -s WASM=0 -fno-ident -Os -flto -DSAMSUNG_WRT -DOS_WASM -DNDEBUG)
+add_compile_options(-w -s WASM=0 -fno-ident -Os -flto -DSAMSUNG_WRT -DNDEBUG)
 
 add_library(moonlight-rs STATIC
     moonlight-common-c/reedsolomon/rs.c)
@@ -236,7 +236,7 @@ add_executable(moonlight
     http.cpp
     input.cpp
     main.cpp
-    wasmplayer.cpp
+    
 )
 target_include_directories(moonlight PUBLIC
     dispatcher
@@ -251,12 +251,12 @@ target_include_directories(moonlight PUBLIC
     opus/silk/fixed
     opus/celt
 )
-set_target_properties(moonlight-wasm
+set_target_properties(moonlight
     PROPERTIES
         COMPILE_FLAGS
             "-s USE_CRYPTO=1 -s USE_SSL=1 -s USE_CURL=1")
-target_compile_features(moonlight-wasm PUBLIC cxx_std_17)
-set_target_properties(moonlight-wasm
+target_compile_features(moonlight PUBLIC cxx_std_17)
+set_target_properties(moonlight
     PROPERTIES
         LINK_FLAGS
             "--bind \
