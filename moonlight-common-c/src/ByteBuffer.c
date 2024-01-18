@@ -8,149 +8,149 @@ void BbInitializeWrappedBuffer(PBYTE_BUFFER buff, char* data, int offset, int le
 }
 
 // Get the long long in the correct byte order
-static uint64_t byteSwap64(PBYTE_BUFFER buff, uint64_t l) {
+static long long byteSwapLongLong(PBYTE_BUFFER buff, long long l) {
     if (buff->byteOrder == BYTE_ORDER_BIG) {
-        return BE64(l);
+        return HTONLL(l);
     }
     else {
-        return LE64(l);
+        return l;
     }
 }
 
 // Get the int in the correct byte order
-static uint32_t byteSwap32(PBYTE_BUFFER buff, uint32_t i) {
+static int byteSwapInt(PBYTE_BUFFER buff, int i) {
     if (buff->byteOrder == BYTE_ORDER_BIG) {
-        return BE32(i);
+        return htonl(i);
     }
     else {
-        return LE32(i);
+        return i;
     }
 }
 
 // Get the short in the correct byte order
-static uint16_t byteSwap16(PBYTE_BUFFER buff, uint16_t s) {
+static int byteSwapShort(PBYTE_BUFFER buff, short s) {
     if (buff->byteOrder == BYTE_ORDER_BIG) {
-        return BE16(s);
+        return htons(s);
     }
     else {
-        return LE16(s);
+        return s;
     }
 }
 
-bool BbAdvanceBuffer(PBYTE_BUFFER buff, int offset) {
+int BbAdvanceBuffer(PBYTE_BUFFER buff, int offset) {
     if (buff->position + offset > buff->length) {
-        return false;
+        return 0;
     }
 
     buff->position += offset;
 
-    return true;
+    return 1;
 }
 
 // Get a byte from the byte buffer
-bool BbGet8(PBYTE_BUFFER buff, uint8_t* c) {
+int BbGet(PBYTE_BUFFER buff, char* c) {
     if (buff->position + sizeof(*c) > buff->length) {
-        return false;
+        return 0;
     }
 
     memcpy(c, &buff->buffer[buff->position], sizeof(*c));
     buff->position += sizeof(*c);
 
-    return true;
+    return 1;
 }
 
 // Get a short from the byte buffer
-bool BbGet16(PBYTE_BUFFER buff, uint16_t* s) {
+int BbGetShort(PBYTE_BUFFER buff, short* s) {
     if (buff->position + sizeof(*s) > buff->length) {
-        return false;
+        return 0;
     }
 
     memcpy(s, &buff->buffer[buff->position], sizeof(*s));
     buff->position += sizeof(*s);
 
-    *s = byteSwap16(buff, *s);
+    *s = byteSwapShort(buff, *s);
 
-    return true;
+    return 1;
 }
 
 // Get an int from the byte buffer
-bool BbGet32(PBYTE_BUFFER buff, uint32_t* i) {
+int BbGetInt(PBYTE_BUFFER buff, int* i) {
     if (buff->position + sizeof(*i) > buff->length) {
-        return false;
+        return 0;
     }
 
     memcpy(i, &buff->buffer[buff->position], sizeof(*i));
     buff->position += sizeof(*i);
 
-    *i = byteSwap32(buff, *i);
+    *i = byteSwapInt(buff, *i);
 
-    return true;
+    return 1;
 }
 
 // Get a long from the byte buffer
-bool BbGet64(PBYTE_BUFFER buff, uint64_t* l) {
+int BbGetLong(PBYTE_BUFFER buff, long long* l) {
     if (buff->position + sizeof(*l) > buff->length) {
-        return false;
+        return 0;
     }
 
     memcpy(l, &buff->buffer[buff->position], sizeof(*l));
     buff->position += sizeof(*l);
 
-    *l = byteSwap64(buff, *l);
+    *l = byteSwapLongLong(buff, *l);
 
-    return true;
+    return 1;
 }
 
 // Put an int into the byte buffer
-bool BbPut32(PBYTE_BUFFER buff, uint32_t i) {
+int BbPutInt(PBYTE_BUFFER buff, int i) {
     if (buff->position + sizeof(i) > buff->length) {
-        return false;
+        return 0;
     }
 
-    i = byteSwap32(buff, i);
+    i = byteSwapInt(buff, i);
 
     memcpy(&buff->buffer[buff->position], &i, sizeof(i));
     buff->position += sizeof(i);
 
-    return true;
+    return 1;
 }
 
 // Put a long into the byte buffer
-bool BbPut64(PBYTE_BUFFER buff, uint64_t l) {
+int BbPutLong(PBYTE_BUFFER buff, long long l) {
     if (buff->position + sizeof(l) > buff->length) {
-        return false;
+        return 0;
     }
 
-    l = byteSwap64(buff, l);
+    l = byteSwapLongLong(buff, l);
 
     memcpy(&buff->buffer[buff->position], &l, sizeof(l));
     buff->position += sizeof(l);
 
-    return true;
+    return 1;
 }
 
 // Put a short into the byte buffer
-bool BbPut16(PBYTE_BUFFER buff, uint16_t s) {
+int BbPutShort(PBYTE_BUFFER buff, short s) {
     if (buff->position + sizeof(s) > buff->length) {
-        return false;
+        return 0;
     }
 
-    s = byteSwap16(buff, s);
+    s = byteSwapShort(buff, s);
 
     memcpy(&buff->buffer[buff->position], &s, sizeof(s));
     buff->position += sizeof(s);
 
-    return true;
+    return 1;
 }
 
 // Put a byte into the buffer
-bool BbPut8(PBYTE_BUFFER buff, uint8_t c) {
+int BbPut(PBYTE_BUFFER buff, char c) {
     if (buff->position + sizeof(c) > buff->length) {
-        return false;
+        return 0;
     }
 
     memcpy(&buff->buffer[buff->position], &c, sizeof(c));
     buff->position += sizeof(c);
 
-    return true;
+    return 1;
 }

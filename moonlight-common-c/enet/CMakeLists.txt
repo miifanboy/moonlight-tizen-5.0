@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 2.6)
 
 project(enet)
 
@@ -19,16 +19,7 @@ check_struct_has_member("struct msghdr" "msg_flags" "sys/types.h;sys/socket.h" H
 set(CMAKE_EXTRA_INCLUDE_FILES "sys/types.h" "sys/socket.h")
 check_type_size("socklen_t" HAS_SOCKLEN_T BUILTIN_TYPES_ONLY)
 unset(CMAKE_EXTRA_INCLUDE_FILES)
-set(CMAKE_EXTRA_INCLUDE_FILES "qos2.h")
-check_type_size("QOS_FLOWID" HAS_QOS_FLOWID BUILTIN_TYPES_ONLY)
-check_type_size("PQOS_FLOWID" HAS_PQOS_FLOWID BUILTIN_TYPES_ONLY)
-unset(CMAKE_EXTRA_INCLUDE_FILES)
-if(MSVC)
-	add_definitions(-W3)
-else()
-	add_definitions(-Wno-error)
-endif()
-
+ 
 if(HAS_FCNTL)
     add_definitions(-DHAS_FCNTL=1)
 endif()
@@ -62,48 +53,17 @@ endif()
 if(HAS_SOCKLEN_T)
     add_definitions(-DHAS_SOCKLEN_T=1)
 endif()
-if(HAS_QOS_FLOWID)
-    add_definitions(-DHAS_QOS_FLOWID=1)
-endif()
-if(HAS_PQOS_FLOWID)
-    add_definitions(-DHAS_PQOS_FLOWID=1)
-endif()
-
+ 
 include_directories(${PROJECT_SOURCE_DIR}/include)
-
-set(INCLUDE_FILES_PREFIX include/enet)
-set(INCLUDE_FILES
-    ${INCLUDE_FILES_PREFIX}/callbacks.h
-    ${INCLUDE_FILES_PREFIX}/enet.h
-    ${INCLUDE_FILES_PREFIX}/list.h
-    ${INCLUDE_FILES_PREFIX}/protocol.h
-    ${INCLUDE_FILES_PREFIX}/time.h
-    ${INCLUDE_FILES_PREFIX}/types.h
-    ${INCLUDE_FILES_PREFIX}/unix.h
-    ${INCLUDE_FILES_PREFIX}/utility.h
-    ${INCLUDE_FILES_PREFIX}/win32.h
-)
-
-set(SOURCE_FILES
-    callbacks.c
-    compress.c
-    host.c
-    list.c
-    packet.c
-    peer.c
-    protocol.c
-    unix.c
-    win32.c)
-
-source_group(include FILES ${INCLUDE_FILES})
-source_group(source FILES ${SOURCE_FILES})
-
+ 
 add_library(enet STATIC
-    ${INCLUDE_FILES}
-    ${SOURCE_FILES}
-)
-target_include_directories(enet SYSTEM PUBLIC include)
-
-if (MINGW)
-    target_link_libraries(enet winmm ws2_32)
-endif()
+        callbacks.c
+        compress.c
+        host.c
+        list.c
+        packet.c
+        peer.c
+        protocol.c
+        unix.c
+        win32.c
+    )

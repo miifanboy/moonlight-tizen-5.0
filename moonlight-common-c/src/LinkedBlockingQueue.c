@@ -2,10 +2,10 @@
 
 // Destroy the linked blocking queue and associated mutex and event
 PLINKED_BLOCKING_QUEUE_ENTRY LbqDestroyLinkedBlockingQueue(PLINKED_BLOCKING_QUEUE queueHead) {
-    LC_ASSERT(queueHead->shutdown || queueHead->draining || queueHead->lifetimeSize == 0);
+    LC_ASSERT(queueHead->shutdown || queueHead->lifetimeSize == 0);
     
     PltDeleteMutex(&queueHead->mutex);
-    PltDeleteConditionVariable(&queueHead->cond);
+    PltCloseEvent(&queueHead->containsDataEvent);
 
     return queueHead->head;
 }
@@ -20,15 +20,10 @@ PLINKED_BLOCKING_QUEUE_ENTRY LbqFlushQueueItems(PLINKED_BLOCKING_QUEUE queueHead
     head = queueHead->head;
 
     // Reinitialize the queue to empty
-    if (head != NULL) {
-        queueHead->head = NULL;
-        queueHead->tail = NULL;
-        queueHead->currentSize = 0;
-    }
-    else {
-        LC_ASSERT(queueHead->tail == NULL);
-        LC_ASSERT(queueHead->currentSize == 0);
-    }
+    queueHead->head = NULL;
+    queueHead->tail = NULL;
+    queueHead->currentSize = 0;
+    PltClearEvent(&queueHead->containsDataEvent);
 
     PltUnlockMutex(&queueHead->mutex);
 
@@ -41,14 +36,13 @@ int LbqInitializeLinkedBlockingQueue(PLINKED_BLOCKING_QUEUE queueHead, int sizeB
 
     memset(queueHead, 0, sizeof(*queueHead));
 
-    err = PltCreateMutex(&queueHead->mutex);
+    err = PltCreateEvent(&queueHead->containsDataEvent);
     if (err != 0) {
         return err;
     }
 
-    err = PltCreateConditionVariable(&queueHead->cond, &queueHead->mutex);
+    err = PltCreateMutex(&queueHead->mutex);
     if (err != 0) {
-        PltDeleteMutex(&queueHead->mutex);
         return err;
     }
 
@@ -58,24 +52,8 @@ int LbqInitializeLinkedBlockingQueue(PLINKED_BLOCKING_QUEUE queueHead, int sizeB
 }
 
 void LbqSignalQueueShutdown(PLINKED_BLOCKING_QUEUE queueHead) {
-    PltLockMutex(&queueHead->mutex);
-    queueHead->shutdown = true;
-    PltUnlockMutex(&queueHead->mutex);
-    PltSignalConditionVariable(&queueHead->cond);
-}
-
-void LbqSignalQueueDrain(PLINKED_BLOCKING_QUEUE queueHead) {
-    PltLockMutex(&queueHead->mutex);
-    queueHead->draining = true;
-    PltUnlockMutex(&queueHead->mutex);
-    PltSignalConditionVariable(&queueHead->cond);
-}
-
-void LbqSignalQueueUserWake(PLINKED_BLOCKING_QUEUE queueHead) {
-    PltLockMutex(&queueHead->mutex);
-    queueHead->pendingUserWake = true;
-    PltUnlockMutex(&queueHead->mutex);
-    PltSignalConditionVariable(&queueHead->cond);
+    queueHead->shutdown = 1;
+    PltSetEvent(&queueHead->containsDataEvent);
 }
 
 int LbqGetItemCount(PLINKED_BLOCKING_QUEUE queueHead) {
@@ -83,25 +61,21 @@ int LbqGetItemCount(PLINKED_BLOCKING_QUEUE queueHead) {
 }
 
 int LbqOfferQueueItem(PLINKED_BLOCKING_QUEUE queueHead, void* data, PLINKED_BLOCKING_QUEUE_ENTRY entry) {
-    bool wasEmpty;
+    if (queueHead->shutdown) {
+        return LBQ_INTERRUPTED;
+    }
     
     entry->flink = NULL;
     entry->data = data;
 
     PltLockMutex(&queueHead->mutex);
 
-    if (queueHead->shutdown || queueHead->draining) {
-        PltUnlockMutex(&queueHead->mutex);
-        return LBQ_INTERRUPTED;
-    }
-
     if (queueHead->currentSize == queueHead->sizeBound) {
         PltUnlockMutex(&queueHead->mutex);
         return LBQ_BOUND_EXCEEDED;
     }
 
-    wasEmpty = queueHead->head == NULL;
-    if (wasEmpty) {
+    if (queueHead->head == NULL) {
         LC_ASSERT(queueHead->currentSize == 0);
         LC_ASSERT(queueHead->tail == NULL);
         queueHead->head = entry;
@@ -121,33 +95,26 @@ int LbqOfferQueueItem(PLINKED_BLOCKING_QUEUE queueHead, void* data, PLINKED_BLOC
 
     PltUnlockMutex(&queueHead->mutex);
 
-    if (wasEmpty) {
-        // Only call PltSignalConditionVariable() when transitioning from
-        // empty -> non-empty to avoid a useless syscall for each new entry.
-        PltSignalConditionVariable(&queueHead->cond);
-    }
+    PltSetEvent(&queueHead->containsDataEvent);
 
     return LBQ_SUCCESS;
 }
 
 // This must be synchronized with LbqFlushQueueItems by the caller
 int LbqPeekQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
-    PltLockMutex(&queueHead->mutex);
-
     if (queueHead->shutdown) {
-        PltUnlockMutex(&queueHead->mutex);
         return LBQ_INTERRUPTED;
     }
+    
+    if (queueHead->head == NULL) {
+        return LBQ_NO_ELEMENT;
+    }
+
+    PltLockMutex(&queueHead->mutex);
 
     if (queueHead->head == NULL) {
-        if (queueHead->draining) {
-            PltUnlockMutex(&queueHead->mutex);
-            return LBQ_INTERRUPTED;
-        }
-        else {
-            PltUnlockMutex(&queueHead->mutex);
-            return LBQ_NO_ELEMENT;
-        }
+        PltUnlockMutex(&queueHead->mutex);
+        return LBQ_NO_ELEMENT;
     }
 
     *data = queueHead->head->data;
@@ -159,23 +126,20 @@ int LbqPeekQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
 
 int LbqPollQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
     PLINKED_BLOCKING_QUEUE_ENTRY entry;
-
-    PltLockMutex(&queueHead->mutex);
-
+    
     if (queueHead->shutdown) {
-        PltUnlockMutex(&queueHead->mutex);
         return LBQ_INTERRUPTED;
     }
 
     if (queueHead->head == NULL) {
-        if (queueHead->draining) {
-            PltUnlockMutex(&queueHead->mutex);
-            return LBQ_INTERRUPTED;
-        }
-        else {
-            PltUnlockMutex(&queueHead->mutex);
-            return LBQ_NO_ELEMENT;
-        }
+        return LBQ_NO_ELEMENT;
+    }
+
+    PltLockMutex(&queueHead->mutex);
+
+    if (queueHead->head == NULL) {
+        PltUnlockMutex(&queueHead->mutex);
+        return LBQ_NO_ELEMENT;
     }
 
     entry = queueHead->head;
@@ -184,6 +148,7 @@ int LbqPollQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
     if (queueHead->head == NULL) {
         LC_ASSERT(queueHead->currentSize == 0);
         queueHead->tail = NULL;
+        PltClearEvent(&queueHead->containsDataEvent);
     }
     else {
         LC_ASSERT(queueHead->currentSize != 0);
@@ -199,51 +164,49 @@ int LbqPollQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
 
 int LbqWaitForQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
     PLINKED_BLOCKING_QUEUE_ENTRY entry;
-
-    PltLockMutex(&queueHead->mutex);
-
-    // Wait for a waking condition: either data available or rundown
-    while (queueHead->head == NULL && !queueHead->draining && !queueHead->shutdown && !queueHead->pendingUserWake) {
-        PltWaitForConditionVariable(&queueHead->cond, &queueHead->mutex);
-    }
-
-    // If we're shutting down, abort immediately, even if there's data available
+    int err;
+    
     if (queueHead->shutdown) {
-        PltUnlockMutex(&queueHead->mutex);
         return LBQ_INTERRUPTED;
     }
 
-    // If this is a user requested wake, process it now
-    if (queueHead->pendingUserWake) {
-        queueHead->pendingUserWake = false;
+    for (;;) {
+        err = PltWaitForEvent(&queueHead->containsDataEvent);
+        if (err != PLT_WAIT_SUCCESS) {
+            return LBQ_INTERRUPTED;
+        }
+
+        if (queueHead->shutdown) {
+            return LBQ_INTERRUPTED;
+        }
+
+        PltLockMutex(&queueHead->mutex);
+
+        if (queueHead->head == NULL) {
+            PltClearEvent(&queueHead->containsDataEvent);
+            PltUnlockMutex(&queueHead->mutex);
+            continue;
+        }
+
+        entry = queueHead->head;
+        queueHead->head = entry->flink;
+        queueHead->currentSize--;
+        if (queueHead->head == NULL) {
+            LC_ASSERT(queueHead->currentSize == 0);
+            queueHead->tail = NULL;
+            PltClearEvent(&queueHead->containsDataEvent);
+        }
+        else {
+            LC_ASSERT(queueHead->currentSize != 0);
+            queueHead->head->blink = NULL;
+        }
+
+        *data = entry->data;
+
         PltUnlockMutex(&queueHead->mutex);
-        return LBQ_USER_WAKE;
+
+        break;
     }
-
-    // If we're draining, only abort if we have no data available
-    if (queueHead->draining && queueHead->head == NULL) {
-        PltUnlockMutex(&queueHead->mutex);
-        return LBQ_INTERRUPTED;
-    }
-
-    // We should have bailed by this point if there was no data
-    LC_ASSERT(queueHead->head != NULL);
-
-    entry = queueHead->head;
-    queueHead->head = entry->flink;
-    queueHead->currentSize--;
-    if (queueHead->head == NULL) {
-        LC_ASSERT(queueHead->currentSize == 0);
-        queueHead->tail = NULL;
-    }
-    else {
-        LC_ASSERT(queueHead->currentSize != 0);
-        queueHead->head->blink = NULL;
-    }
-
-    *data = entry->data;
-
-    PltUnlockMutex(&queueHead->mutex);
 
     return LBQ_SUCCESS;
 }

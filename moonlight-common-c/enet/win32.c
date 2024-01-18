@@ -7,28 +7,9 @@
 #define ENET_BUILDING_LIB 1
 #include "enet/enet.h"
 #include <windows.h>
-#ifndef HAS_QOS_FLOWID
-typedef UINT32 QOS_FLOWID;
-#endif
-#ifndef HAS_PQOS_FLOWID
-typedef UINT32 *PQOS_FLOWID;
-#endif
 #include <mmsystem.h>
-#include <qos2.h>
-#ifndef QOS_NON_ADAPTIVE_FLOW
-#define QOS_NON_ADAPTIVE_FLOW 0x00000002
-#endif
 
 static enet_uint32 timeBase = 0;
-static HANDLE qosHandle = INVALID_HANDLE_VALUE;
-static QOS_FLOWID qosFlowId;
-static BOOL qosAddedFlow;
-
-static HMODULE QwaveLibraryHandle;
-
-BOOL (WINAPI *pfnQOSCreateHandle)(PQOS_VERSION Version, PHANDLE QOSHandle);
-BOOL (WINAPI *pfnQOSCloseHandle)(HANDLE QOSHandle);
-BOOL (WINAPI *pfnQOSAddSocketToFlow)(HANDLE QOSHandle, SOCKET Socket, PSOCKADDR DestAddr, QOS_TRAFFIC_TYPE TrafficType, DWORD Flags, PQOS_FLOWID FlowId);
 
 int
 enet_initialize (void)
@@ -49,46 +30,12 @@ enet_initialize (void)
 
     timeBeginPeriod (1);
 
-    QwaveLibraryHandle = LoadLibraryA("qwave.dll");
-    if (QwaveLibraryHandle != NULL) {
-        pfnQOSCreateHandle = (void*)GetProcAddress(QwaveLibraryHandle, "QOSCreateHandle");
-        pfnQOSCloseHandle = (void*)GetProcAddress(QwaveLibraryHandle, "QOSCloseHandle");
-        pfnQOSAddSocketToFlow = (void*)GetProcAddress(QwaveLibraryHandle, "QOSAddSocketToFlow");
-
-        if (pfnQOSCreateHandle == NULL || pfnQOSCloseHandle == NULL || pfnQOSAddSocketToFlow == NULL) {
-            pfnQOSCreateHandle = NULL;
-            pfnQOSCloseHandle = NULL;
-            pfnQOSAddSocketToFlow = NULL;
-
-            FreeLibrary(QwaveLibraryHandle);
-            QwaveLibraryHandle = NULL;
-        }
-    }
-
     return 0;
 }
 
 void
 enet_deinitialize (void)
 {
-    qosAddedFlow = FALSE;
-    qosFlowId = 0;
-
-    if (qosHandle != INVALID_HANDLE_VALUE)
-    {
-        pfnQOSCloseHandle(qosHandle);
-        qosHandle = INVALID_HANDLE_VALUE;
-    }
-
-    if (QwaveLibraryHandle != NULL) {
-        pfnQOSCreateHandle = NULL;
-        pfnQOSCloseHandle = NULL;
-        pfnQOSAddSocketToFlow = NULL;
-
-        FreeLibrary(QwaveLibraryHandle);
-        QwaveLibraryHandle = NULL;
-    }
-
     timeEndPeriod (1);
 
     WSACleanup ();
@@ -271,32 +218,6 @@ enet_socket_set_option (ENetSocket socket, ENetSocketOption option, int value)
             result = setsockopt (socket, IPPROTO_TCP, TCP_NODELAY, (char *) & value, sizeof (int));
             break;
 
-        case ENET_SOCKOPT_QOS:
-        {
-            if (value)
-            {
-                QOS_VERSION qosVersion;
-
-                qosVersion.MajorVersion = 1;
-                qosVersion.MinorVersion = 0;
-                if (pfnQOSCreateHandle == NULL || !pfnQOSCreateHandle(&qosVersion, &qosHandle))
-                {
-                    qosHandle = INVALID_HANDLE_VALUE;
-                }
-            }
-            else if (qosHandle != INVALID_HANDLE_VALUE)
-            {
-                pfnQOSCloseHandle(qosHandle);
-                qosHandle = INVALID_HANDLE_VALUE;
-            }
-
-            qosAddedFlow = FALSE;
-            qosFlowId = 0;
-
-            result = 0;
-            break;
-        }
-
         default:
             break;
     }
@@ -370,20 +291,6 @@ enet_socket_send (ENetSocket socket,
                   size_t bufferCount)
 {
     DWORD sentLength;
-
-    if (!qosAddedFlow && qosHandle != INVALID_HANDLE_VALUE)
-    {
-        qosFlowId = 0; // Must be initialized to 0
-        pfnQOSAddSocketToFlow(qosHandle,
-                              socket,
-                              (struct sockaddr *)&address->address,
-                              QOSTrafficTypeControl,
-                              QOS_NON_ADAPTIVE_FLOW,
-                              &qosFlowId);
-
-        // Even if we failed, don't try again
-        qosAddedFlow = TRUE;
-    }
 
     if (WSASendTo (socket, 
                    (LPWSABUF) buffers,
