@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(MoonlightWasm VERSION 1.0)
+project(Moonlight VERSION 1.0)
 
-add_compile_options(-w -s WASM=1 -fno-ident -Os -flto -DSAMSUNG_WRT -DOS_WASM -DNDEBUG)
+add_compile_options(-w -s WASM=0 -fno-ident -Os -flto -DSAMSUNG_WRT -DOS_WASM -DNDEBUG)
 
 add_library(moonlight-rs STATIC
     moonlight-common-c/reedsolomon/rs.c)
@@ -227,20 +227,19 @@ target_compile_definitions(opus PUBLIC
      FIXED_POINT
      OPUS_BUILD)
 
-add_executable(moonlight-wasm
+add_executable(moonlight
     libchelper.c
     profiling.cpp
-    wasm/auddec.cpp
-    wasm/connectionlistener.cpp
-    wasm/gamepad.cpp
-    wasm/http.cpp
-    wasm/input.cpp
-    wasm/main.cpp
-    wasm/wasmplayer.cpp
+    auddec.cpp
+    connectionlistener.cpp
+    gamepad.cpp
+    http.cpp
+    input.cpp
+    main.cpp
+    wasmplayer.cpp
 )
-target_include_directories(moonlight-wasm PUBLIC
-    wasm
-    wasm/dispatcher
+target_include_directories(moonlight PUBLIC
+    dispatcher
     moonlight-common-c/src
     moonlight-common-c/enet/include
     moonlight-common-c/reedsolomon
@@ -269,12 +268,12 @@ set_target_properties(moonlight-wasm
              -s NO_EXIT_RUNTIME=1 \
              -s USE_PTHREADS=1 \
              -s PTHREAD_POOL_SIZE=20 \
-             -s WASM=1 \
+             -s WASM=0 \
              -s ENVIRONMENT_MAY_BE_TIZEN \
              -s USE_CRYPTO=1 \
              -s USE_SSL=1 \
              -s USE_CURL=1")
-target_link_libraries(moonlight-wasm PUBLIC
+target_link_libraries(moonlight PUBLIC
     libgamestream
     h264bitstream
     opus
@@ -285,16 +284,16 @@ target_link_libraries(moonlight-wasm PUBLIC
 
 # TODO(samsung) These files may change.
 set(EMSCRIPTEN_OUTPUT_FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/moonlight-wasm.js.mem"
-  "${CMAKE_CURRENT_BINARY_DIR}/moonlight-wasm.wasm"
-  "${CMAKE_CURRENT_BINARY_DIR}/moonlight-wasm.worker.js"
+  "${CMAKE_CURRENT_BINARY_DIR}/moonlight.js.mem"
+  "${CMAKE_CURRENT_BINARY_DIR}/moonlight.wasm"
+  "${CMAKE_CURRENT_BINARY_DIR}/moonlight.worker.js"
 )
 
-install(TARGETS moonlight-wasm RUNTIME DESTINATION widget)
+install(TARGETS moonlight RUNTIME DESTINATION widget)
 install(FILES ${EMSCRIPTEN_OUTPUT_FILES} DESTINATION widget OPTIONAL)
 install(DIRECTORY static DESTINATION widget)
-install(DIRECTORY wasm/platform DESTINATION widget)
-install(FILES wasm/index.html DESTINATION widget)
-install(FILES res/config.xml DESTINATION widget)
-install(FILES res/platform.js DESTINATION widget)
+install(DIRECTORY platform DESTINATION widget)
+install(FILES index.html DESTINATION widget)
+install(FILES config.xml DESTINATION widget)
+install(FILES platform.js DESTINATION widget)
 
