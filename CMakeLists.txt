@@ -39,7 +39,6 @@ add_library(moonlight-common-c STATIC
     moonlight-common-c/src/LinkedBlockingQueue.c
     moonlight-common-c/src/Misc.c
     moonlight-common-c/src/Platform.c
-    moonlight-common-c/src/PlatformThreads.c
     moonlight-common-c/src/PlatformSockets.c
     moonlight-common-c/src/RtpFecQueue.c
     moonlight-common-c/src/RtpReOrderQueue.c
